@@ -27,8 +27,8 @@ public class TopNPCCommand {
                                             String category = normalizeCategory(StringArgumentType.getString(context, "category").toLowerCase());
                                             int rank = IntegerArgumentType.getInteger(context, "rank");
 
-                                            if (!category.equals("money") && !category.equals("hours") && !category.equals("claims") && !category.equals("plots") && !category.equals("kills") && !category.equals("deaths")) {
-                                                player.sendSystemMessage(Component.literal("§c[!] Valid categories: money, hours, claims, plots, kills, deaths."));
+                                            if (!category.equals("money") && !category.equals("hours") && !category.equals("claims") && !category.equals("kills") && !category.equals("deaths")) {
+                                                player.sendSystemMessage(Component.literal("§c[!] Valid categories: money, hours, claims, kills, deaths."));
                                                 return 0;
                                             }
 
@@ -46,6 +46,7 @@ public class TopNPCCommand {
                                                     TopManager.TopEntry entry = TopManager.topData.get(category).get(rank);
                                                     npc.setPlayerName(entry.name);
                                                     npc.setDisplayValue(entry.displayValue);
+                                                    npc.setUUIDStr(entry.uuid != null ? entry.uuid : "");
                                                 }
 
                                                 player.level().addFreshEntity(npc);
@@ -68,8 +69,18 @@ public class TopNPCCommand {
                                 return 0;
                             }
 
-                            TopNPC closest = npcs.get(0);
-                            closest.discard();
+                            TopNPC closest = null;
+                            double bestDistSq = Double.MAX_VALUE;
+                            for (TopNPC candidate : npcs) {
+                                double distSq = candidate.distanceToSqr(player);
+                                if (distSq < bestDistSq) {
+                                    bestDistSq = distSq;
+                                    closest = candidate;
+                                }
+                            }
+                            if (closest != null) {
+                                closest.discard();
+                            }
                             player.sendSystemMessage(Component.literal("§a[✔] NPC removed successfully!"));
                             return 1;
                         })

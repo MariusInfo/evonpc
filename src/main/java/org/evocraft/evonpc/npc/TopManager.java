@@ -11,16 +11,23 @@ import org.evocraft.evocore.database.DatabaseManager;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.evocraft.evocore.util.EvoCurrencyFormatter;
 
 @Mod.EventBusSubscriber(modid = EvoNPC.MODID)
 public class TopManager {
 
     private static int tickCounter = 0;
     private static final int UPDATE_INTERVAL_TICKS = 20 * 60 * 5;
+    private static final AtomicBoolean UPDATING = new AtomicBoolean(false);
 
-    public static final Map<String, Map<Integer, TopEntry>> topData = new HashMap<>();
+    public static final Map<String, Map<Integer, TopEntry>> topData = new ConcurrentHashMap<>();
 
     public static class TopEntry {
         public String uuid;
@@ -30,6 +37,7 @@ public class TopManager {
     }
 
     public static void forceUpdateNow(MinecraftServer server) {
+        if (server == null) return;
         tickCounter = 0;
         updateDatabaseAsync(server);
     }
@@ -50,42 +58,47 @@ public class TopManager {
     }
 
     private static void updateDatabaseAsync(MinecraftServer server) {
-        new Thread(() -> {
-            synchronized (DatabaseManager.get()) {
-                try {
-                    Connection conn = DatabaseManager.get().getConnection();
-                    if (conn == null || conn.isClosed()) return;
+        if (!UPDATING.compareAndSet(false, true)) return;
+        Thread t = new Thread(() -> {
+            try {
+                synchronized (DatabaseManager.get()) {
+                    try {
+                        Connection conn = DatabaseManager.get().getConnection();
+                        if (conn == null || conn.isClosed()) return;
 
-                    String filter = " AND uuid != '00000000-0000-0000-0000-000000000000' AND name NOT LIKE '?%' AND name NOT LIKE '§%' ";
+                        String filter = " AND uuid != '00000000-0000-0000-0000-000000000000' " +
+                                "AND name IS NOT NULL AND name != '' AND name != 'Necunoscut' AND name != 'Unknown' " +
+                                "AND name NOT LIKE '?%' AND name NOT LIKE '§%' ";
 
-                    fetchCategory(conn, "money", "SELECT uuid, name, balance AS val FROM player_stats WHERE balance > 0" + filter + "ORDER BY balance DESC LIMIT 3", false, " Evo", false);
-                    fetchCategory(conn, "kills", "SELECT uuid, name, kills AS val FROM player_stats WHERE kills > 0" + filter + "ORDER BY kills DESC LIMIT 3", false, " Kills", false);
-                    fetchCategory(conn, "deaths", "SELECT uuid, name, deaths AS val FROM player_stats WHERE deaths > 0" + filter + "ORDER BY deaths DESC LIMIT 3", false, " Deaths", false);
-                    fetchCategory(conn, "hours", "SELECT uuid, name, playtime_sec AS val FROM player_stats WHERE playtime_sec > 0" + filter + "ORDER BY playtime_sec DESC LIMIT 3", true, " Hours", false);
-                    fetchCategory(conn, "claims", "SELECT uuid, name, claims AS val FROM player_stats WHERE claims > 0" + filter + "ORDER BY claims DESC LIMIT 3", false, " Protections", false);
+                        fetchCategory(conn, "money", "SELECT uuid, name, balance AS val FROM player_stats WHERE balance > 0" + filter + "ORDER BY balance DESC LIMIT 3", false, " Evo");
+                        fetchCategory(conn, "kills", "SELECT uuid, name, kills AS val FROM player_stats WHERE kills > 0" + filter + "ORDER BY kills DESC LIMIT 3", false, " Kills");
+                        fetchCategory(conn, "deaths", "SELECT uuid, name, deaths AS val FROM player_stats WHERE deaths > 0" + filter + "ORDER BY deaths DESC LIMIT 3", false, " Deaths");
+                        fetchCategory(conn, "hours", "SELECT uuid, name, playtime_sec AS val FROM player_stats WHERE playtime_sec > 0" + filter + "ORDER BY playtime_sec DESC LIMIT 3", true, " Hours");
+                        fetchCategory(conn, "claims", "SELECT uuid, name, claims AS val FROM player_stats WHERE claims > 0" + filter + "ORDER BY claims DESC LIMIT 3", false, " Protections");
 
-                    String plotQuery = "SELECT s.uuid, s.name, COUNT(c.chunk_key) AS val FROM plot_claims c " +
-                            "JOIN player_stats s ON c.owner_uuid = s.uuid " +
-                            "WHERE s.uuid != '00000000-0000-0000-0000-000000000000' AND s.name NOT LIKE '?%' AND s.name NOT LIKE '§%' " +
-                            "GROUP BY c.owner_uuid, s.uuid, s.name " +
-                            "ORDER BY val DESC LIMIT 3";
-                    fetchCategory(conn, "plots", plotQuery, false, " Plots", true);
+                        // Backward compatibility aliases
+                        Map<Integer, TopEntry> moneyMap = topData.get("money");
+                        if (moneyMap != null) topData.put("bani", moneyMap);
+                        Map<Integer, TopEntry> hoursMap = topData.get("hours");
+                        if (hoursMap != null) topData.put("ore", hoursMap);
+                        Map<Integer, TopEntry> deathsMap = topData.get("deaths");
+                        if (deathsMap != null) topData.put("decese", deathsMap);
 
-                    // Backward compatibility aliases
-                    if (topData.containsKey("money")) topData.put("bani", topData.get("money"));
-                    if (topData.containsKey("hours")) topData.put("ore", topData.get("hours"));
-                    if (topData.containsKey("deaths")) topData.put("decese", topData.get("deaths"));
-
-                } catch (Exception e) {
-                    e.printStackTrace();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
-            }
 
-            server.execute(() -> updateNPCsInWorld(server));
-        }).start();
+                server.execute(() -> updateNPCsInWorld(server));
+            } finally {
+                UPDATING.set(false);
+            }
+        }, "EvoNPC Leaderboard Poller");
+        t.setDaemon(true);
+        t.start();
     }
 
-    private static void fetchCategory(Connection conn, String category, String query, boolean isTime, String suffix, boolean dividePlot) {
+    private static void fetchCategory(Connection conn, String category, String query, boolean isTime, String suffix) {
         try (PreparedStatement stmt = conn.prepareStatement(query);
              ResultSet rs = stmt.executeQuery()) {
 
@@ -95,24 +108,23 @@ public class TopManager {
                 String uuid = rs.getString("uuid");
                 String name = rs.getString("name");
                 double val = rs.getDouble("val");
-
-                if (dividePlot) {
-                    val = val / 16.0;
-                }
+                if (!Double.isFinite(val) || val < 0.0) val = 0.0;
 
                 String displayVal;
                 if (isTime) {
-                    displayVal = String.format("%.1f", val / 3600.0) + suffix;
+                    displayVal = String.format(Locale.US, "%.1f", val / 3600.0) + suffix;
+                } else if ("money".equals(category)) {
+                    displayVal = EvoCurrencyFormatter.format(val) + suffix;
                 } else {
-                    displayVal = (int)val + suffix;
+                    displayVal = ((long) val) + suffix;
                 }
 
                 if (name != null && !name.isEmpty() && !name.equals("Necunoscut") && !name.equals("Unknown")) {
-                    categoryMap.put(rank, new TopEntry(uuid, name, displayVal));
+                    categoryMap.put(rank, new TopEntry(uuid != null ? uuid : "", name, displayVal));
                     rank++;
                 }
             }
-            topData.put(category, categoryMap);
+            topData.put(category, Collections.unmodifiableMap(categoryMap));
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -125,8 +137,9 @@ public class TopManager {
                     String cat = npc.getCategory();
                     int rank = npc.getRank();
 
-                    if (topData.containsKey(cat) && topData.get(cat).containsKey(rank)) {
-                        TopEntry entry = topData.get(cat).get(rank);
+                    Map<Integer, TopEntry> catMap = topData.get(cat);
+                    TopEntry entry = catMap != null ? catMap.get(rank) : null;
+                    if (entry != null) {
                         npc.setPlayerName(entry.name);
                         npc.setDisplayValue(entry.displayValue);
                         npc.setUUIDStr(entry.uuid);

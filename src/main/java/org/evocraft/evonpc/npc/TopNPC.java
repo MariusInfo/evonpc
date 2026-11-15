@@ -94,10 +94,10 @@ public class TopNPC extends PathfinderMob {
     @Override
     public void readAdditionalSaveData(CompoundTag tag) {
         super.readAdditionalSaveData(tag);
-        setCategory(tag.getString("TopCategory"));
-        setRank(tag.getInt("TopRank"));
-        setPlayerName(tag.getString("TopPlayerName"));
-        setDisplayValue(tag.getString("TopDisplayValue"));
-        setUUIDStr(tag.getString("TopPlayerUUID"));
+        if (tag.contains("TopCategory")) setCategory(tag.getString("TopCategory"));
+        if (tag.contains("TopRank")) setRank(tag.getInt("TopRank"));
+        if (tag.contains("TopPlayerName")) setPlayerName(tag.getString("TopPlayerName"));
+        if (tag.contains("TopDisplayValue")) setDisplayValue(tag.getString("TopDisplayValue"));
+        if (tag.contains("TopPlayerUUID")) setUUIDStr(tag.getString("TopPlayerUUID"));
     }
 }
