@@ -1,25 +1,25 @@
 modLoader="javafml"
-loaderVersion="[47,)"
-license="All Rights Reserved"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
 [[mods]]
-modId="evonpc"
-version="1.0"
-displayName="EvoNPC"
-authors="EvoCraft"
-description="Leaderboard NPCs module for EvoNetwork"
-[[dependencies.evonpc]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="${mod_authors}"
+description='''${mod_description}'''
+[[dependencies."${mod_id}"]]
     modId="forge"
     mandatory=true
-    versionRange="[47,)"
+    versionRange="${forge_version_range}"
     ordering="NONE"
     side="BOTH"
-[[dependencies.evonpc]]
+[[dependencies."${mod_id}"]]
     modId="minecraft"
     mandatory=true
-    versionRange="[1.20.1,1.21)"
+    versionRange="${minecraft_version_range}"
     ordering="NONE"
     side="BOTH"
-[[dependencies.evonpc]]
+[[dependencies."${mod_id}"]]
     modId="evocore"
     mandatory=true
     versionRange="[1.0,)"

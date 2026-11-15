@@ -79,7 +79,6 @@ public class TopNPCRenderer extends EntityRenderer<TopNPC> {
             case "hours", "ore" -> "Hours";
             case "deaths", "decese" -> "Deaths";
             case "claims" -> "Protections";
-            case "plots" -> "Plots";
             case "kills" -> "Kills";
             default -> capitalize(category);
         };
